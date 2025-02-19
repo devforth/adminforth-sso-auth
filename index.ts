@@ -10,6 +10,10 @@ interface OAuthPluginOptions {
   emailField: string;
   emailConfirmedField?: string;
   adapters: OAuth2Adapter[];
+  openSignup?: {
+    enabled?: boolean;
+    defaultFieldValues?: Record<string, any>;
+  };
 }
 
 export default class OAuthPlugin extends AdminForthPlugin {
@@ -22,7 +26,15 @@ export default class OAuthPlugin extends AdminForthPlugin {
     if (!options.emailField) {
       throw new Error('OAuthPlugin: emailField is required');
     }
-    this.options = options;
+    
+    // Set default values for openSignup
+    this.options = {
+      ...options,
+      openSignup: {
+        enabled: options.openSignup?.enabled ?? false,
+        defaultFieldValues: options.openSignup?.defaultFieldValues ?? {},
+      }
+    };
   }
 
   async modifyResourceConfig(adminforth: IAdminForth, resource: AdminForthResource) {
@@ -87,7 +99,7 @@ export default class OAuthPlugin extends AdminForthPlugin {
           authUrl: `${adapter.getAuthUrl()}&state=${state}`,
           provider: adapter.constructor.name,
           baseUrl,
-          icon: adapter.getIcon?.() || ''
+          icon: adapter.getIcon()
         }
       });
     });
@@ -162,13 +174,19 @@ export default class OAuthPlugin extends AdminForthPlugin {
           ]);
 
           if (!user) {
+            // Check if open signup is enabled
+            if (!this.options.openSignup?.enabled) {
+              return { 
+                error: 'User not found and open signup is disabled',
+                redirectTo: '/login'
+              };
+            }
+
             // When creating a new user, set emailConfirmedField to true if it's configured
             const createData: any = {
-              id: randomUUID(),
-              created_at: new Date().toISOString(),
               [this.options.emailField]: userInfo.email,
-              role: 'user',
-              password_hash: ''
+              [this.adminforth.config.auth.passwordHashField]: '',
+              ...this.options.openSignup.defaultFieldValues
             };
             
             if (this.options.emailConfirmedField) {
